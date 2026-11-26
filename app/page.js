@@ -6,11 +6,12 @@ export default function Home() {
   const [imagesMinh, setImagesMinh] = useState([]);
   const [imagesNau, setImagesNau] = useState([]);
   const [contextImages, setContextImages] = useState([]);
+  const [compareImages, setCompareImages] = useState([]); // Mục mới: Ảnh so sánh tương quan lực chiến / BXH
   const [battleContextText, setBattleContextText] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState("");
 
-  // Nén ảnh sâu: Tối đa 600px, chất lượng 0.5 (Chỉ ~30KB/ảnh, triệt tiêu lỗi payload)
+  // Nén ảnh: Tối đa 600px, JPEG 0.5 (~30KB/ảnh)
   const compressImage = (file) => {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -54,8 +55,14 @@ export default function Home() {
   };
 
   const handleAnalyze = async () => {
-    if (imagesMinh.length === 0 || imagesNau.length === 0) {
-      alert("Vui lòng chọn ít nhất 1 ảnh profile cho mỗi bên Clan!");
+    // Cho phép phân tích nếu có ảnh profile 2 bên HOẶC có ảnh so sánh bảng tương quan lực chiến
+    if (
+      (imagesMinh.length === 0 || imagesNau.length === 0) &&
+      compareImages.length === 0
+    ) {
+      alert(
+        "Vui lòng tải ảnh Profile 2 bên HOẶC tải ít nhất 1 ảnh Bảng so sánh tương quan lực chiến!",
+      );
       return;
     }
 
@@ -63,6 +70,7 @@ export default function Home() {
       imagesMinh,
       imagesNau,
       contextImages,
+      compareImages,
       battleContextText,
     };
 
@@ -92,9 +100,7 @@ export default function Home() {
         try {
           const parsed = JSON.parse(errorText);
           errorMsg = parsed.error?.message || parsed.error || errorText;
-        } catch {
-          // Giữ nguyên text thô nếu không parse được JSON
-        }
+        } catch {}
         throw new Error(errorMsg || "Lỗi máy chủ!");
       }
 
@@ -116,7 +122,6 @@ export default function Home() {
     }
   };
 
-  // Làm sạch các ký hiệu LaTeX trước khi render
   const cleanMarkdown = (text) => {
     if (!text) return "";
     return text
@@ -186,12 +191,52 @@ export default function Home() {
           </div>
         </div>
 
-        {/* 2 & 3. Nạp ảnh profile 2 bên với Button to rõ */}
+        {/* MỤC MỚI: 2. Bảng Xếp Hạng & So Sánh Tương Quan Lực Chiến */}
+        <div className="bg-slate-800 p-4 rounded-xl border border-indigo-500/30 space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-bold text-indigo-400">
+              2. BẢNG SO SÁNH TƯƠNG QUAN LỰC CHIẾN / BẢNG XẾP HẠNG
+            </h2>
+            <span className="text-[11px] text-slate-400">
+              Ảnh bảng tổng lực chiến 2 phe, bảng BXH sự kiện
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="inline-flex items-center gap-2 bg-indigo-950/60 hover:bg-indigo-900/60 text-indigo-200 border border-indigo-600/50 hover:border-indigo-400 px-4 py-2.5 rounded-lg cursor-pointer text-xs font-semibold transition shadow-xs">
+              <span>📊 Thêm ảnh Bảng Lực Chiến / BXH</span>
+              <input
+                type="file"
+                multiple
+                accept="image/*"
+                onChange={(e) =>
+                  handleFileChange(e.target.files, setCompareImages)
+                }
+                className="hidden"
+              />
+            </label>
+            {compareImages.length > 0 && (
+              <div className="flex items-center gap-2 text-xs bg-slate-950 px-3 py-1.5 rounded-lg border border-indigo-500/30">
+                <span className="text-indigo-400 font-bold">
+                  ✓ Đã nạp {compareImages.length} ảnh tương quan
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setCompareImages([])}
+                  className="text-rose-400 hover:text-rose-300 ml-1 cursor-pointer font-bold"
+                >
+                  ✕ Xóa
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* 3 & 4. Nạp ảnh profile chi tiết từng bên */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* Clan Mình */}
           <div className="bg-slate-800 p-4 rounded-xl border border-emerald-500/30 space-y-3">
             <h2 className="font-bold text-emerald-400 text-sm">
-              2. ẢNH PROFILE CLAN MÌNH
+              3. ẢNH PROFILE CLAN MÌNH
             </h2>
             <div className="flex flex-col gap-2">
               <label className="flex items-center justify-center gap-2 w-full py-3 px-4 bg-emerald-950/40 hover:bg-emerald-900/50 border border-emerald-600/50 hover:border-emerald-500 text-emerald-300 rounded-xl cursor-pointer font-semibold text-xs md:text-sm transition shadow-xs">
@@ -234,7 +279,7 @@ export default function Home() {
           {/* Clan Nâu */}
           <div className="bg-slate-800 p-4 rounded-xl border border-amber-500/30 space-y-3">
             <h2 className="font-bold text-amber-500 text-sm">
-              3. ẢNH PROFILE CLAN NÂU (ĐỐI THỦ)
+              4. ẢNH PROFILE CLAN NÂU (ĐỐI THỦ)
             </h2>
             <div className="flex flex-col gap-2">
               <label className="flex items-center justify-center gap-2 w-full py-3 px-4 bg-amber-950/40 hover:bg-amber-900/50 border border-amber-600/50 hover:border-amber-500 text-amber-300 rounded-xl cursor-pointer font-semibold text-xs md:text-sm transition shadow-xs">

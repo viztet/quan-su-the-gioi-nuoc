@@ -7,15 +7,21 @@ const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 export async function POST(req) {
   try {
-    const { imagesMinh, imagesNau, contextImages, battleContextText } =
-      await req.json();
+    const {
+      imagesMinh,
+      imagesNau,
+      contextImages,
+      compareImages,
+      battleContextText,
+    } = await req.json();
 
     const systemInstruction = `
 Bạn là Quân Sư Tác Chiến game "Thế Giới Nước Điên Cuồng" (Mad Survivor: Arid War).
-Nhiệm vụ: Phân tích nhanh chỉ số profile 2 bên và bối cảnh để xuất KẾ HOẠCH TÁC CHIẾN LIÊN MINH NGẮN GỌN, TRỰC DIỆN.
+Nhiệm vụ: Phân tích nhanh chỉ số profile 2 bên, bảng so sánh lực chiến/BXH và bối cảnh để xuất KẾ HOẠCH TÁC CHIẾN LIÊN MINH NGẮN GỌN, TRỰC DIỆN.
 
 QUY TẮC:
 - Đọc thông số: Tên, Lực chiến, Binh chủng sở trường (Tàu Tuần Tra / Cano / Thiết Giáp Hạm), Tướng.
+- Phân tích tương quan lực lượng từ Bảng So Sánh/BXH: Đánh giá nhanh chênh lệch tổng lực chiến, nhận diện top đầu bên địch và phân lớp lực chiến (Whale, Tầm trung, Tầm thấp).
 - Quy đổi Giờ Server (UTC) sang Giờ VN (UTC+7).
 - Phân công rõ: Rally Lead, Garrison Lead, Fast Capper, Chi viện.
 - Ghép cặp Điền Kỵ Tái Mã.
@@ -25,8 +31,17 @@ Yêu cầu: Xuất ngay dạng gạch đầu dòng mệnh lệnh, không giải 
     const contents = [];
 
     if (contextImages && contextImages.length > 0) {
-      contents.push("--- [ẢNH BẢN ĐỒ / THỂ THỨC] ---");
+      contents.push("--- [ẢNH BẢN ĐỒ / THỂ THỨC SỰ KIỆN] ---");
       contextImages.forEach((img) =>
+        contents.push({ inlineData: { data: img.data, mimeType: img.type } }),
+      );
+    }
+
+    if (compareImages && compareImages.length > 0) {
+      contents.push(
+        "--- [ẢNH SO SÁNH TƯƠNG QUAN LỰC CHIẾN / BẢNG XẾP HẠNG] ---",
+      );
+      compareImages.forEach((img) =>
         contents.push({ inlineData: { data: img.data, mimeType: img.type } }),
       );
     }
@@ -35,27 +50,28 @@ Yêu cầu: Xuất ngay dạng gạch đầu dòng mệnh lệnh, không giải 
       `--- [BỐI CẢNH & GIỜ SERVER]: ${battleContextText || "Tranh đoạt cứ điểm"} ---`,
     );
 
-    contents.push("--- [HỒ SƠ CLAN MÌNH] ---");
-    imagesMinh.forEach((img) =>
-      contents.push({ inlineData: { data: img.data, mimeType: img.type } }),
-    );
+    if (imagesMinh && imagesMinh.length > 0) {
+      contents.push("--- [HỒ SƠ PROFILE CLAN MÌNH] ---");
+      imagesMinh.forEach((img) =>
+        contents.push({ inlineData: { data: img.data, mimeType: img.type } }),
+      );
+    }
 
-    contents.push("--- [HỒ SƠ CLAN NÂU] ---");
-    imagesNau.forEach((img) =>
-      contents.push({ inlineData: { data: img.data, mimeType: img.type } }),
-    );
+    if (imagesNau && imagesNau.length > 0) {
+      contents.push("--- [HỒ SƠ PROFILE CLAN NÂU (ĐỐI THỦ)] ---");
+      imagesNau.forEach((img) =>
+        contents.push({ inlineData: { data: img.data, mimeType: img.type } }),
+      );
+    }
 
     contents.push("Xuất kế hoạch tác chiến ngay:");
 
-    // Tạo luồng TransformStream gửi phản hồi ngay lập tức về Vercel tránh timeout
     const { readable, writable } = new TransformStream();
     const writer = writable.getWriter();
     const encoder = new TextEncoder();
 
-    // Thực thi gọi AI bất đồng bộ trong background
     (async () => {
       try {
-        // Gửi ngay 1 ký tự trống để xác lập kết nối HTTP 200 tức thì với Vercel
         await writer.write(encoder.encode(""));
 
         const responseStream = await ai.models.generateContentStream({
@@ -85,7 +101,6 @@ Yêu cầu: Xuất ngay dạng gạch đầu dòng mệnh lệnh, không giải 
       }
     })();
 
-    // Phản hồi kết nối stream ngay lập tức cho client
     return new Response(readable, {
       headers: {
         "Content-Type": "text/plain; charset=utf-8",

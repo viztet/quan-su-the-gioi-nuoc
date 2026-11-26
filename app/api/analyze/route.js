@@ -24,6 +24,7 @@ QUY TẮC:
 - Quy đổi Giờ Server (UTC) sang Giờ VN (UTC+7).
 - Phân công rõ: Rally Lead, Garrison Lead, Fast Capper, Chi viện.
 - Ghép cặp Điền Kỵ Tái Mã.
+- ĐỊNH DẠNG: TUYỆT ĐỐI KHÔNG dùng mã LaTeX (như $\\rightarrow$ hay $\\Rightarrow$). Bắt buộc dùng ký tự Unicode như "➔" hoặc "->".
 Yêu cầu: Xuất ngay dạng gạch đầu dòng mệnh lệnh, không giải thích dài dòng, không chào hỏi.`;
 
     const contents = [];

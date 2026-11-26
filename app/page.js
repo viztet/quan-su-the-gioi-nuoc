@@ -86,7 +86,6 @@ export default function Home() {
         body: payloadString,
       });
 
-      // Nếu server trả về lỗi HTTP (400, 500, 503...)
       if (!res.ok) {
         const errorText = await res.text();
         let errorMsg = errorText;
@@ -99,7 +98,6 @@ export default function Home() {
         throw new Error(errorMsg || "Lỗi máy chủ!");
       }
 
-      // Xử lý Stream từ server trả về
       const reader = res.body.getReader();
       const decoder = new TextDecoder("utf-8");
       let accumulatedText = "";
@@ -108,7 +106,6 @@ export default function Home() {
         const { done, value } = await reader.read();
         if (done) break;
 
-        // Giải mã chunk hiện tại và nối dồn hiển thị ngay lập tức
         accumulatedText += decoder.decode(value, { stream: true });
         setResult(accumulatedText);
       }
@@ -117,6 +114,16 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Làm sạch các ký hiệu LaTeX trước khi render
+  const cleanMarkdown = (text) => {
+    if (!text) return "";
+    return text
+      .replaceAll("$\\rightarrow$", "➔")
+      .replaceAll("$\\Rightarrow$", "➜")
+      .replaceAll("\\rightarrow", "➔")
+      .replaceAll("\\Rightarrow", "➜");
   };
 
   return (
@@ -131,7 +138,7 @@ export default function Home() {
           </p>
         </header>
 
-        {/* Bối cảnh chiến sự */}
+        {/* 1. Bối cảnh chiến sự */}
         <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 space-y-3">
           <h2 className="text-sm font-bold text-cyan-400">
             1. BỐI CẢNH CHIẾN TRƯỜNG & THỜI GIAN SERVER
@@ -143,57 +150,128 @@ export default function Home() {
             rows={2}
             className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm focus:outline-none focus:border-cyan-500"
           />
+
           <div>
-            <label className="text-xs text-slate-300 block mb-1">
+            <label className="text-xs text-slate-300 block mb-2 font-medium">
               Ảnh bản đồ / Thể thức tính điểm (nếu có):
             </label>
-            <input
-              type="file"
-              multiple
-              accept="image/*"
-              onChange={(e) =>
-                handleFileChange(e.target.files, setContextImages)
-              }
-              className="text-xs text-slate-400"
-            />
-            <span className="text-xs text-slate-400 ml-2">
-              Đã chọn: {contextImages.length} ảnh
-            </span>
+            <div className="flex flex-wrap items-center gap-3">
+              <label className="inline-flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-slate-100 px-4 py-2 rounded-lg cursor-pointer text-xs font-semibold border border-slate-600 transition shadow-xs">
+                <span>📁 Chọn ảnh bản đồ</span>
+                <input
+                  type="file"
+                  multiple
+                  accept="image/*"
+                  onChange={(e) =>
+                    handleFileChange(e.target.files, setContextImages)
+                  }
+                  className="hidden"
+                />
+              </label>
+              {contextImages.length > 0 && (
+                <div className="flex items-center gap-2 text-xs bg-slate-950 px-3 py-1.5 rounded-lg border border-slate-700">
+                  <span className="text-cyan-400 font-bold">
+                    ✓ Đã nạp {contextImages.length} ảnh
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setContextImages([])}
+                    className="text-rose-400 hover:text-rose-300 ml-1 cursor-pointer font-bold"
+                  >
+                    ✕ Xóa
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Nạp ảnh profile 2 bên */}
+        {/* 2 & 3. Nạp ảnh profile 2 bên với Button to rõ */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 space-y-2">
+          {/* Clan Mình */}
+          <div className="bg-slate-800 p-4 rounded-xl border border-emerald-500/30 space-y-3">
             <h2 className="font-bold text-emerald-400 text-sm">
               2. ẢNH PROFILE CLAN MÌNH
             </h2>
-            <input
-              type="file"
-              multiple
-              accept="image/*"
-              onChange={(e) => handleFileChange(e.target.files, setImagesMinh)}
-              className="w-full text-xs text-slate-400"
-            />
-            <p className="text-xs text-emerald-400">
-              Đã chọn: {imagesMinh.length} ảnh profile
-            </p>
+            <div className="flex flex-col gap-2">
+              <label className="flex items-center justify-center gap-2 w-full py-3 px-4 bg-emerald-950/40 hover:bg-emerald-900/50 border border-emerald-600/50 hover:border-emerald-500 text-emerald-300 rounded-xl cursor-pointer font-semibold text-xs md:text-sm transition shadow-xs">
+                <span>📷 Thêm ảnh Profile Phe Mình</span>
+                <input
+                  type="file"
+                  multiple
+                  accept="image/*"
+                  onChange={(e) =>
+                    handleFileChange(e.target.files, setImagesMinh)
+                  }
+                  className="hidden"
+                />
+              </label>
+              <div className="flex items-center justify-between text-xs px-1">
+                <span
+                  className={
+                    imagesMinh.length > 0
+                      ? "text-emerald-400 font-bold"
+                      : "text-slate-400"
+                  }
+                >
+                  {imagesMinh.length > 0
+                    ? `✓ Đã chọn ${imagesMinh.length} ảnh`
+                    : "Chưa có ảnh nào"}
+                </span>
+                {imagesMinh.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setImagesMinh([])}
+                    className="text-rose-400 hover:text-rose-300 cursor-pointer"
+                  >
+                    Xóa tất cả
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
 
-          <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 space-y-2">
+          {/* Clan Nâu */}
+          <div className="bg-slate-800 p-4 rounded-xl border border-amber-500/30 space-y-3">
             <h2 className="font-bold text-amber-500 text-sm">
               3. ẢNH PROFILE CLAN NÂU (ĐỐI THỦ)
             </h2>
-            <input
-              type="file"
-              multiple
-              accept="image/*"
-              onChange={(e) => handleFileChange(e.target.files, setImagesNau)}
-              className="w-full text-xs text-slate-400"
-            />
-            <p className="text-xs text-amber-500">
-              Đã chọn: {imagesNau.length} ảnh profile
-            </p>
+            <div className="flex flex-col gap-2">
+              <label className="flex items-center justify-center gap-2 w-full py-3 px-4 bg-amber-950/40 hover:bg-amber-900/50 border border-amber-600/50 hover:border-amber-500 text-amber-300 rounded-xl cursor-pointer font-semibold text-xs md:text-sm transition shadow-xs">
+                <span>📷 Thêm ảnh Profile Clan Nâu</span>
+                <input
+                  type="file"
+                  multiple
+                  accept="image/*"
+                  onChange={(e) =>
+                    handleFileChange(e.target.files, setImagesNau)
+                  }
+                  className="hidden"
+                />
+              </label>
+              <div className="flex items-center justify-between text-xs px-1">
+                <span
+                  className={
+                    imagesNau.length > 0
+                      ? "text-amber-400 font-bold"
+                      : "text-slate-400"
+                  }
+                >
+                  {imagesNau.length > 0
+                    ? `✓ Đã chọn ${imagesNau.length} ảnh`
+                    : "Chưa có ảnh nào"}
+                </span>
+                {imagesNau.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setImagesNau([])}
+                    className="text-rose-400 hover:text-rose-300 cursor-pointer"
+                  >
+                    Xóa tất cả
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
         </div>
 
@@ -201,14 +279,14 @@ export default function Home() {
         <button
           onClick={handleAnalyze}
           disabled={loading}
-          className="w-full bg-linear-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 py-3 rounded-xl font-bold transition flex justify-center items-center gap-2 cursor-pointer disabled:opacity-50"
+          className="w-full bg-linear-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 py-3.5 rounded-xl font-bold transition flex justify-center items-center gap-2 cursor-pointer disabled:opacity-50 text-white shadow-md"
         >
           {loading
             ? "Đang phân tích số liệu & lập kịch bản..."
             : "⚡ Bắt Đầu Quân Sư Tác Chiến"}
         </button>
 
-        {/* Kết quả hiển thị tối ưu giao diện */}
+        {/* Kết quả hiển thị */}
         {(result || loading) && (
           <div className="bg-slate-800 p-5 md:p-6 rounded-xl border border-cyan-500/50 space-y-4 shadow-lg">
             <div className="flex justify-between items-center pb-3 border-b border-slate-700">
@@ -217,7 +295,9 @@ export default function Home() {
               </h3>
               {result && (
                 <button
-                  onClick={() => navigator.clipboard.writeText(result)}
+                  onClick={() =>
+                    navigator.clipboard.writeText(cleanMarkdown(result))
+                  }
                   className="text-xs bg-cyan-700/60 hover:bg-cyan-600 text-white font-medium px-3 py-1.5 rounded-lg border border-cyan-500/40 transition cursor-pointer"
                 >
                   Sao chép lệnh
@@ -225,9 +305,8 @@ export default function Home() {
               )}
             </div>
 
-            {/* Vùng render Markdown chuẩn font sans, phân cấp đề mục trực quan */}
             <div className="text-slate-200 text-sm md:text-base leading-relaxed space-y-3 font-sans [&>h1]:text-xl [&>h1]:font-extrabold [&>h1]:text-cyan-400 [&>h2]:text-lg [&>h2]:font-bold [&>h2]:text-cyan-300 [&>h3]:text-base [&>h3]:font-bold [&>h3]:text-emerald-400 [&>p]:leading-relaxed [&>ul]:list-disc [&>ul]:pl-5 [&>ul]:space-y-1 [&>ol]:list-decimal [&>ol]:pl-5 [&>hr]:border-slate-700 [&>hr]:my-3 [&_strong]:text-amber-300 [&_strong]:font-semibold [&_code]:bg-slate-950 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-cyan-300 [&_code]:text-xs">
-              <ReactMarkdown>{result}</ReactMarkdown>
+              <ReactMarkdown>{cleanMarkdown(result)}</ReactMarkdown>
               {loading && (
                 <span className="inline-block w-2.5 h-4 ml-1 bg-cyan-400 animate-pulse align-middle rounded-xs" />
               )}

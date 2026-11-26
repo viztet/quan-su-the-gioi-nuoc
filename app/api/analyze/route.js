@@ -1,14 +1,9 @@
 import { GoogleGenAI } from "@google/genai";
 
-// Tăng thời gian timeout tối đa trên Vercel lên 60 giây (mức trần của gói Hobby)
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-
-const MODELS = ["gemini-3.8-flash", "gemini-3.5-flash", "gemini-3.0-flash"];
-
-const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export async function POST(req) {
   try {
@@ -52,69 +47,53 @@ Yêu cầu: Xuất ngay dạng gạch đầu dòng mệnh lệnh, không giải 
 
     contents.push("Xuất kế hoạch tác chiến ngay:");
 
-    let responseStream = null;
-    let lastError = null;
-
-    for (const modelName of MODELS) {
-      for (let attempt = 1; attempt <= 2; attempt++) {
-        try {
-          responseStream = await ai.models.generateContentStream({
-            model: modelName,
-            contents: contents,
-            config: {
-              systemInstruction: systemInstruction,
-              temperature: 0.1,
-              maxOutputTokens: 2048,
-              thinkingConfig: { thinkingBudget: 0 },
-            },
-          });
-          if (responseStream) break;
-        } catch (err) {
-          lastError = err;
-          if (err.message?.includes("503") || err.message?.includes("429")) {
-            await delay(1000);
-          } else {
-            break;
-          }
-        }
-      }
-      if (responseStream) break;
-    }
-
-    if (!responseStream) {
-      throw (
-        lastError ||
-        new Error(
-          "Cụm máy chủ AI đang chịu tải cao, vui lòng thử lại sau giây lát.",
-        )
-      );
-    }
-
+    // Tạo luồng TransformStream gửi phản hồi ngay lập tức về Vercel tránh timeout
+    const { readable, writable } = new TransformStream();
+    const writer = writable.getWriter();
     const encoder = new TextEncoder();
-    const readable = new ReadableStream({
-      async start(controller) {
-        try {
-          for await (const chunk of responseStream) {
-            if (chunk.text) {
-              controller.enqueue(encoder.encode(chunk.text));
-            }
-          }
-        } catch (err) {
-          controller.error(err);
-        } finally {
-          controller.close();
-        }
-      },
-    });
 
+    // Thực thi gọi AI bất đồng bộ trong background
+    (async () => {
+      try {
+        // Gửi ngay 1 ký tự trống để xác lập kết nối HTTP 200 tức thì với Vercel
+        await writer.write(encoder.encode(""));
+
+        const responseStream = await ai.models.generateContentStream({
+          model: "gemini-3.8-flash",
+          contents: contents,
+          config: {
+            systemInstruction: systemInstruction,
+            temperature: 0.1,
+            maxOutputTokens: 2048,
+            thinkingConfig: { thinkingBudget: 0 },
+          },
+        });
+
+        for await (const chunk of responseStream) {
+          if (chunk.text) {
+            await writer.write(encoder.encode(chunk.text));
+          }
+        }
+      } catch (err) {
+        console.error("Gemini Error:", err);
+        const errMsg = err.message?.includes("503")
+          ? "\n\n⚠️ Cụm máy chủ Google AI đang chịu tải cao đột ngột. Hãy thử bấm lại sau vài giây!"
+          : `\n\n⚠️ Lỗi tác chiến: ${err.message}`;
+        await writer.write(encoder.encode(errMsg));
+      } finally {
+        await writer.close();
+      }
+    })();
+
+    // Phản hồi kết nối stream ngay lập tức cho client
     return new Response(readable, {
       headers: {
         "Content-Type": "text/plain; charset=utf-8",
-        "Transfer-Encoding": "chunked",
+        "Cache-Control": "no-cache, no-transform",
       },
     });
   } catch (err) {
-    console.error("API Error:", err);
+    console.error("API Route Error:", err);
     return new Response(JSON.stringify({ error: err.message }), {
       status: 500,
       headers: { "Content-Type": "application/json" },

@@ -9,7 +9,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState("");
 
-  // Hàm tự động nén và thu nhỏ ảnh để không bị lỗi Request Entity Too Large trên Vercel
+  // Hàm nén ảnh tối ưu: Tối đa 800px, chất lượng 0.6 (~60-90KB/ảnh)
   const compressImage = (file) => {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -19,7 +19,7 @@ export default function Home() {
         img.src = event.target.result;
         img.onload = () => {
           const canvas = document.createElement("canvas");
-          const MAX_WIDTH = 1200;
+          const MAX_WIDTH = 800; // 800px dư sức để AI đọc nét chữ số
           let width = img.width;
           let height = img.height;
 
@@ -33,8 +33,8 @@ export default function Home() {
           const ctx = canvas.getContext("2d");
           ctx.drawImage(img, 0, 0, width, height);
 
-          // Nén định dạng JPEG chất lượng 0.7 (vẫn giữ độ sắc nét để AI đọc rõ chữ số)
-          const dataUrl = canvas.toDataURL("image/jpeg", 0.7);
+          // Nén chất lượng 0.6 để triệt tiêu dung lượng thừa
+          const dataUrl = canvas.toDataURL("image/jpeg", 0.6);
           resolve({
             data: dataUrl.split(",")[1],
             type: "image/jpeg",
@@ -44,11 +44,14 @@ export default function Home() {
     });
   };
 
-  const processFiles = async (files, setter) => {
-    for (const file of Array.from(files)) {
-      const compressed = await compressImage(file);
-      setter((prev) => [...prev, compressed]);
-    }
+  // Dùng Promise.all để nén toàn bộ ảnh và gán mới (không dồn dữ liệu cũ)
+  const handleFileChange = async (files, setter) => {
+    if (!files || files.length === 0) return;
+    const fileList = Array.from(files);
+    const compressedList = await Promise.all(
+      fileList.map((f) => compressImage(f)),
+    );
+    setter(compressedList);
   };
 
   const handleAnalyze = async () => {
@@ -70,7 +73,16 @@ export default function Home() {
           battleContextText,
         }),
       });
-      const data = await res.json();
+
+      // Kiểm tra nếu Vercel trả về lỗi HTML thay vì JSON
+      const text = await res.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error(text || "Lỗi phản hồi từ máy chủ!");
+      }
+
       if (data.error) throw new Error(data.error);
       setResult(data.result);
     } catch (err) {
@@ -112,7 +124,9 @@ export default function Home() {
               type="file"
               multiple
               accept="image/*"
-              onChange={(e) => processFiles(e.target.files, setContextImages)}
+              onChange={(e) =>
+                handleFileChange(e.target.files, setContextImages)
+              }
               className="text-xs text-slate-400"
             />
             <span className="text-xs text-slate-400 ml-2">
@@ -131,7 +145,7 @@ export default function Home() {
               type="file"
               multiple
               accept="image/*"
-              onChange={(e) => processFiles(e.target.files, setImagesMinh)}
+              onChange={(e) => handleFileChange(e.target.files, setImagesMinh)}
               className="w-full text-xs text-slate-400"
             />
             <p className="text-xs text-emerald-400">
@@ -147,7 +161,7 @@ export default function Home() {
               type="file"
               multiple
               accept="image/*"
-              onChange={(e) => processFiles(e.target.files, setImagesNau)}
+              onChange={(e) => handleFileChange(e.target.files, setImagesNau)}
               className="w-full text-xs text-slate-400"
             />
             <p className="text-xs text-amber-500">

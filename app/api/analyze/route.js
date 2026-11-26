@@ -1,10 +1,11 @@
 import { GoogleGenAI } from "@google/genai";
 
-export const runtime = "edge";
+// Tăng thời gian timeout tối đa trên Vercel lên 60 giây (mức trần của gói Hobby)
+export const maxDuration = 60;
+export const dynamic = "force-dynamic";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-// Danh sách các model tương thích hiện tại để tự động chuyển luân phiên khi có lỗi 503
 const MODELS = ["gemini-3.8-flash", "gemini-3.5-flash", "gemini-3.0-flash"];
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -16,14 +17,14 @@ export async function POST(req) {
 
     const systemInstruction = `
 Bạn là Quân Sư Tác Chiến game "Thế Giới Nước Điên Cuồng" (Mad Survivor: Arid War).
-Nhiệm vụ: Phân tích ảnh hồ sơ 2 bên và bối cảnh để xuất KẾ HOẠCH TÁC CHIẾN LIÊN MINH NGẮN GỌN, TRỰC DIỆN.
+Nhiệm vụ: Phân tích nhanh chỉ số profile 2 bên và bối cảnh để xuất KẾ HOẠCH TÁC CHIẾN LIÊN MINH NGẮN GỌN, TRỰC DIỆN.
 
 QUY TẮC:
-- Đọc thông số: Tên, Lực chiến, Căn cứ, Binh chủng (Tàu Tuần Tra / Cano / Thiết Giáp Hạm), Tướng.
-- Bám sát Giờ Server (UTC) và quy đổi sang Giờ VN (UTC+7).
-- Phân vai rõ ràng: Rally Lead, Garrison Lead, Fast Capper, Chi viện.
-- Áp dụng Điền Kỵ Tái Mã xếp cặp.
-Yêu cầu: Xuất trực tiếp dạng gạch đầu dòng mệnh lệnh, súc tích, không dông dài.`;
+- Đọc thông số: Tên, Lực chiến, Binh chủng sở trường (Tàu Tuần Tra / Cano / Thiết Giáp Hạm), Tướng.
+- Quy đổi Giờ Server (UTC) sang Giờ VN (UTC+7).
+- Phân công rõ: Rally Lead, Garrison Lead, Fast Capper, Chi viện.
+- Ghép cặp Điền Kỵ Tái Mã.
+Yêu cầu: Xuất ngay dạng gạch đầu dòng mệnh lệnh, không giải thích dài dòng, không chào hỏi.`;
 
     const contents = [];
 
@@ -53,7 +54,6 @@ Yêu cầu: Xuất trực tiếp dạng gạch đầu dòng mệnh lệnh, súc 
     let responseStream = null;
     let lastError = null;
 
-    // Vòng lặp tự động chuyển model hoặc thử lại khi dính lỗi 503
     for (const modelName of MODELS) {
       for (let attempt = 1; attempt <= 2; attempt++) {
         try {
@@ -70,11 +70,10 @@ Yêu cầu: Xuất trực tiếp dạng gạch đầu dòng mệnh lệnh, súc 
           if (responseStream) break;
         } catch (err) {
           lastError = err;
-          // Nếu server báo 503 hoặc 429, tạm dừng 1s rồi thử lại
           if (err.message?.includes("503") || err.message?.includes("429")) {
             await delay(1000);
           } else {
-            break; // Lỗi khác (như 404) thì đổi ngay sang model kế tiếp
+            break;
           }
         }
       }
@@ -110,7 +109,7 @@ Yêu cầu: Xuất trực tiếp dạng gạch đầu dòng mệnh lệnh, súc 
     return new Response(readable, {
       headers: {
         "Content-Type": "text/plain; charset=utf-8",
-        "Cache-Control": "no-cache, no-transform",
+        "Transfer-Encoding": "chunked",
       },
     });
   } catch (err) {

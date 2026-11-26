@@ -9,17 +9,46 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState("");
 
-  const processFiles = (files, setter) => {
-    Array.from(files).forEach((file) => {
+  // Hàm tự động nén và thu nhỏ ảnh để không bị lỗi Request Entity Too Large trên Vercel
+  const compressImage = (file) => {
+    return new Promise((resolve) => {
       const reader = new FileReader();
-      reader.onloadend = () => {
-        setter((prev) => [
-          ...prev,
-          { data: reader.result.split(",")[1], type: file.type },
-        ]);
-      };
       reader.readAsDataURL(file);
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target.result;
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          const MAX_WIDTH = 1200;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > MAX_WIDTH) {
+            height = Math.round((height * MAX_WIDTH) / width);
+            width = MAX_WIDTH;
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0, width, height);
+
+          // Nén định dạng JPEG chất lượng 0.7 (vẫn giữ độ sắc nét để AI đọc rõ chữ số)
+          const dataUrl = canvas.toDataURL("image/jpeg", 0.7);
+          resolve({
+            data: dataUrl.split(",")[1],
+            type: "image/jpeg",
+          });
+        };
+      };
     });
+  };
+
+  const processFiles = async (files, setter) => {
+    for (const file of Array.from(files)) {
+      const compressed = await compressImage(file);
+      setter((prev) => [...prev, compressed]);
+    }
   };
 
   const handleAnalyze = async () => {

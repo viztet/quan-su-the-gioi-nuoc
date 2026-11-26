@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import ReactMarkdown from "react-markdown";
 
 export default function Home() {
   const [imagesMinh, setImagesMinh] = useState([]);
@@ -207,26 +208,28 @@ export default function Home() {
             : "⚡ Bắt Đầu Quân Sư Tác Chiến"}
         </button>
 
-        {/* Kết quả */}
+        {/* Kết quả hiển thị tối ưu giao diện */}
         {(result || loading) && (
-          <div className="bg-slate-800 p-5 rounded-xl border border-cyan-500/50 space-y-3">
-            <div className="flex justify-between items-center pb-2 border-b border-slate-700">
-              <h3 className="font-bold text-cyan-300">
-                KẾ HOẠCH ĐIỀU QUÂN LIÊN MINH
+          <div className="bg-slate-800 p-5 md:p-6 rounded-xl border border-cyan-500/50 space-y-4 shadow-lg">
+            <div className="flex justify-between items-center pb-3 border-b border-slate-700">
+              <h3 className="font-bold text-cyan-300 text-base md:text-lg flex items-center gap-2">
+                📋 KẾ HOẠCH ĐIỀU QUÂN LIÊN MINH
               </h3>
               {result && (
                 <button
                   onClick={() => navigator.clipboard.writeText(result)}
-                  className="text-xs bg-slate-700 px-3 py-1 rounded hover:bg-slate-600 transition"
+                  className="text-xs bg-cyan-700/60 hover:bg-cyan-600 text-white font-medium px-3 py-1.5 rounded-lg border border-cyan-500/40 transition cursor-pointer"
                 >
-                  Copy lệnh
+                  Sao chép lệnh
                 </button>
               )}
             </div>
-            <div className="text-sm font-mono whitespace-pre-wrap leading-relaxed text-slate-200">
-              {result}
+
+            {/* Vùng render Markdown chuẩn font sans, phân cấp đề mục trực quan */}
+            <div className="text-slate-200 text-sm md:text-base leading-relaxed space-y-3 font-sans [&>h1]:text-xl [&>h1]:font-extrabold [&>h1]:text-cyan-400 [&>h2]:text-lg [&>h2]:font-bold [&>h2]:text-cyan-300 [&>h3]:text-base [&>h3]:font-bold [&>h3]:text-emerald-400 [&>p]:leading-relaxed [&>ul]:list-disc [&>ul]:pl-5 [&>ul]:space-y-1 [&>ol]:list-decimal [&>ol]:pl-5 [&>hr]:border-slate-700 [&>hr]:my-3 [&_strong]:text-amber-300 [&_strong]:font-semibold [&_code]:bg-slate-950 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-cyan-300 [&_code]:text-xs">
+              <ReactMarkdown>{result}</ReactMarkdown>
               {loading && (
-                <span className="inline-block w-2 h-4 ml-1 bg-cyan-400 animate-pulse align-middle" />
+                <span className="inline-block w-2.5 h-4 ml-1 bg-cyan-400 animate-pulse align-middle rounded-xs" />
               )}
             </div>
           </div>

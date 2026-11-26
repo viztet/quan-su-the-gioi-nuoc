@@ -9,7 +9,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState("");
 
-  // Hàm nén ảnh tối ưu: Tối đa 800px, chất lượng 0.6 (~60-90KB/ảnh)
+  // Nén ảnh sâu: Tối đa 600px, chất lượng 0.5 (Chỉ ~30KB/ảnh, triệt tiêu lỗi payload)
   const compressImage = (file) => {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -19,7 +19,7 @@ export default function Home() {
         img.src = event.target.result;
         img.onload = () => {
           const canvas = document.createElement("canvas");
-          const MAX_WIDTH = 800; // 800px dư sức để AI đọc nét chữ số
+          const MAX_WIDTH = 600;
           let width = img.width;
           let height = img.height;
 
@@ -33,8 +33,7 @@ export default function Home() {
           const ctx = canvas.getContext("2d");
           ctx.drawImage(img, 0, 0, width, height);
 
-          // Nén chất lượng 0.6 để triệt tiêu dung lượng thừa
-          const dataUrl = canvas.toDataURL("image/jpeg", 0.6);
+          const dataUrl = canvas.toDataURL("image/jpeg", 0.5);
           resolve({
             data: dataUrl.split(",")[1],
             type: "image/jpeg",
@@ -44,7 +43,6 @@ export default function Home() {
     });
   };
 
-  // Dùng Promise.all để nén toàn bộ ảnh và gán mới (không dồn dữ liệu cũ)
   const handleFileChange = async (files, setter) => {
     if (!files || files.length === 0) return;
     const fileList = Array.from(files);
@@ -59,6 +57,24 @@ export default function Home() {
       alert("Vui lòng chọn ít nhất 1 ảnh profile cho mỗi bên Clan!");
       return;
     }
+
+    const payload = {
+      imagesMinh,
+      imagesNau,
+      contextImages,
+      battleContextText,
+    };
+
+    const payloadString = JSON.stringify(payload);
+    const payloadSizeMB = new Blob([payloadString]).size / (1024 * 1024);
+
+    if (payloadSizeMB > 4.0) {
+      alert(
+        `Dung lượng gửi lên quá lớn (${payloadSizeMB.toFixed(2)}MB / tối đa 4.0MB). Hãy giảm bớt số lượng ảnh!`,
+      );
+      return;
+    }
+
     setLoading(true);
     setResult("");
 
@@ -66,21 +82,15 @@ export default function Home() {
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          imagesMinh,
-          imagesNau,
-          contextImages,
-          battleContextText,
-        }),
+        body: payloadString,
       });
 
-      // Kiểm tra nếu Vercel trả về lỗi HTML thay vì JSON
       const text = await res.text();
       let data;
       try {
         data = JSON.parse(text);
       } catch {
-        throw new Error(text || "Lỗi phản hồi từ máy chủ!");
+        throw new Error(text || "Máy chủ phản hồi không đúng định dạng JSON!");
       }
 
       if (data.error) throw new Error(data.error);
@@ -170,7 +180,7 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Nút bấm kích hoạt */}
+        {/* Nút kích hoạt */}
         <button
           onClick={handleAnalyze}
           disabled={loading}
@@ -181,7 +191,7 @@ export default function Home() {
             : "⚡ Bắt Đầu Quân Sư Tác Chiến"}
         </button>
 
-        {/* Kết quả hiển thị */}
+        {/* Kết quả */}
         {result && (
           <div className="bg-slate-800 p-5 rounded-xl border border-cyan-500/50 space-y-3">
             <div className="flex justify-between items-center pb-2 border-b border-slate-700">

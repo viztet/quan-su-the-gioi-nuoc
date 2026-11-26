@@ -1,5 +1,4 @@
 import { GoogleGenAI } from "@google/genai";
-import { NextResponse } from "next/server";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
@@ -10,24 +9,17 @@ export async function POST(req) {
 
     const systemInstruction = `
 Bạn là Tổng Tham Mưu Trưởng Tác Chiến Liên Minh trong tựa game "Thế Giới Nước Điên Cuồng" (Mad Survivor: Arid War).
-Nhiệm vụ: Phân tích ảnh hồ sơ hai bên (Clan Mình vs Clan Nâu) và ảnh bản đồ/thể thức sự kiện để xuất KẾ HOẠCH TÁC CHIẾN LIÊN MINH CHI TIẾT.
+Nhiệm vụ: Đọc ảnh hồ sơ hai bên (Clan Mình vs Clan Nâu) và ảnh bản đồ/ghi chú sự kiện để xuất KẾ HOẠCH TÁC CHIẾN LIÊN MINH NGẮN GỌN, TRỰC DIỆN.
 
-QUY TẮC PHÂN TÍCH:
-1. ĐỌC CHỈ SỐ: Bóc tách Tên, Cấp căn cứ nổi, Lực chiến tổng, Cấp lính/thuyền, Anh hùng và binh chủng sở trường (Tàu Tuần Tra / Cano Cao Tốc / Thiết Giáp Hạm).
-2. QUY ĐỔI THỜI GIAN: Bám sát theo GIỜ SERVER (UTC). Khi xuất mốc giờ tập kết, ghi rõ cả 2 mốc: Giờ Server (UTC) và Giờ Việt Nam (UTC+7).
-3. ĐIỀN KỴ TÁI MÃ & KHẮC CHẾ:
-   - Ghép cặp cụ thể: Ai bên mình kiềm tỏa ai bên Nâu.
-   - Cách câu giờ khi Top 1 Nâu đi Rally; dồn lực lượng nào đánh chiếm cứ điểm/nhà máy lọc nước.
-4. PHÂN CÔNG VAI TRÒ (GỌI ĐÍCH DANH TÊN):
-   - Rally Leaders (Mũi nhọn dồn quân).
-   - Garrison Leads (Thủ cứ điểm/thành lũy).
-   - Fast Cappers (Cano chiếm cờ đầu trận).
-   - Đội chi viện (Gửi loại quân phù hợp vào Rally).
-Lời văn dứt khoát, mang tính mệnh lệnh quân sự.`;
+QUY TẮC:
+1. ĐỌC CHỈ SỐ: Tên, Căn cứ, Lực chiến, Binh chủng sở trường (Tàu Tuần Tra / Cano / Thiết Giáp Hạm), Tướng.
+2. QUY ĐỔI GIỜ: Quy đổi giờ Server (UTC) sang Giờ Việt Nam (UTC+7).
+3. ĐIỀN KỴ TÁI MÃ: Ghép cặp khắc chế rõ ràng, cách xử lý khi Top 1 Nâu đi Rally.
+4. PHÂN CÔNG VAI TRÒ: Rally Lead, Garrison Lead, Fast Capper, Chi viện.
+Yêu cầu: Đi thẳng vào mệnh lệnh tác chiến, súc tích, không dông dài.`;
 
     const contents = [];
 
-    // Nạp ảnh thể thức / bản đồ
     if (contextImages && contextImages.length > 0) {
       contents.push("--- [ẢNH BẢN ĐỒ / THỂ THỨC SỰ KIỆN] ---");
       contextImages.forEach((img) =>
@@ -35,39 +27,83 @@ Lời văn dứt khoát, mang tính mệnh lệnh quân sự.`;
       );
     }
 
-    // Nạp bối cảnh gõ tay
     contents.push(
-      `--- [MÔ TẢ BỐI CẢNH & MỤC TIÊU]: ${battleContextText || "Chiếm cứ điểm và diệt quân"} ---`,
+      `--- [BỐI CẢNH & MỤC TIÊU]: ${battleContextText || "Chiếm cứ điểm và diệt quân"} ---`,
     );
 
-    // Nạp ảnh Clan Mình
-    contents.push("--- [HỒ SƠ THÀNH VIÊN CLAN MÌNH] ---");
+    contents.push("--- [HỒ SƠ CLAN MÌNH] ---");
     imagesMinh.forEach((img) =>
       contents.push({ inlineData: { data: img.data, mimeType: img.type } }),
     );
 
-    // Nạp ảnh Clan Nâu
-    contents.push("--- [HỒ SƠ THÀNH VIÊN CLAN NÂU (ĐỐI THỦ)] ---");
+    contents.push("--- [HỒ SƠ CLAN NÂU (ĐỐI THỦ)] ---");
     imagesNau.forEach((img) =>
       contents.push({ inlineData: { data: img.data, mimeType: img.type } }),
     );
 
-    contents.push(
-      "Hãy phân tích toàn bộ dữ liệu trên và xuất phương án tác chiến liên minh chi tiết ngay.",
-    );
+    contents.push("Xuất kế hoạch tác chiến liên minh chi tiết ngay.");
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.8-flash",
-      contents: contents,
-      config: {
-        systemInstruction: systemInstruction,
-        temperature: 0.2,
+    // Danh sách model ưu tiên: Thử model 1, nếu quá tải thì tự nhảy sang model 2
+    const candidateModels = ["gemini-2.5-flash", "gemini-2.0-flash"];
+    let responseStream = null;
+    let lastError = null;
+
+    for (const modelName of candidateModels) {
+      try {
+        responseStream = await ai.models.generateContentStream({
+          model: modelName,
+          contents: contents,
+          config: {
+            systemInstruction: systemInstruction,
+            temperature: 0.1,
+          },
+        });
+        if (responseStream) break; // Gọi thành công thì thoát vòng lặp
+      } catch (err) {
+        console.warn(
+          `Model ${modelName} bị lỗi/quá tải, đang chuyển sang model dự phòng...`,
+          err.message,
+        );
+        lastError = err;
+      }
+    }
+
+    if (!responseStream) {
+      throw (
+        lastError ||
+        new Error(
+          "Tất cả các cụm máy chủ AI đang quá tải, vui lòng thử lại sau 30 giây.",
+        )
+      );
+    }
+
+    // Trả stream dữ liệu về giao diện
+    const encoder = new TextEncoder();
+    const readable = new ReadableStream({
+      async start(controller) {
+        try {
+          for await (const chunk of responseStream) {
+            controller.enqueue(encoder.encode(chunk.text));
+          }
+        } catch (err) {
+          controller.error(err);
+        } finally {
+          controller.close();
+        }
       },
     });
 
-    return NextResponse.json({ result: response.text });
+    return new Response(readable, {
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Transfer-Encoding": "chunked",
+      },
+    });
   } catch (err) {
     console.error(err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return new Response(JSON.stringify({ error: err.message }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 }

@@ -85,16 +85,32 @@ export default function Home() {
         body: payloadString,
       });
 
-      const text = await res.text();
-      let data;
-      try {
-        data = JSON.parse(text);
-      } catch {
-        throw new Error(text || "Máy chủ phản hồi không đúng định dạng JSON!");
+      // Nếu server trả về lỗi HTTP (400, 500, 503...)
+      if (!res.ok) {
+        const errorText = await res.text();
+        let errorMsg = errorText;
+        try {
+          const parsed = JSON.parse(errorText);
+          errorMsg = parsed.error?.message || parsed.error || errorText;
+        } catch {
+          // Giữ nguyên text thô nếu không parse được JSON
+        }
+        throw new Error(errorMsg || "Lỗi máy chủ!");
       }
 
-      if (data.error) throw new Error(data.error);
-      setResult(data.result);
+      // Xử lý Stream từ server trả về
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+      let accumulatedText = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        // Giải mã chunk hiện tại và nối dồn hiển thị ngay lập tức
+        accumulatedText += decoder.decode(value, { stream: true });
+        setResult(accumulatedText);
+      }
     } catch (err) {
       alert("Lỗi: " + err.message);
     } finally {
@@ -184,7 +200,7 @@ export default function Home() {
         <button
           onClick={handleAnalyze}
           disabled={loading}
-          className="w-full bg-linear-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 py-3 rounded-xl font-bold transition flex justify-center items-center gap-2"
+          className="w-full bg-linear-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 py-3 rounded-xl font-bold transition flex justify-center items-center gap-2 cursor-pointer disabled:opacity-50"
         >
           {loading
             ? "Đang phân tích số liệu & lập kịch bản..."
@@ -192,21 +208,26 @@ export default function Home() {
         </button>
 
         {/* Kết quả */}
-        {result && (
+        {(result || loading) && (
           <div className="bg-slate-800 p-5 rounded-xl border border-cyan-500/50 space-y-3">
             <div className="flex justify-between items-center pb-2 border-b border-slate-700">
               <h3 className="font-bold text-cyan-300">
                 KẾ HOẠCH ĐIỀU QUÂN LIÊN MINH
               </h3>
-              <button
-                onClick={() => navigator.clipboard.writeText(result)}
-                className="text-xs bg-slate-700 px-3 py-1 rounded hover:bg-slate-600"
-              >
-                Copy lệnh
-              </button>
+              {result && (
+                <button
+                  onClick={() => navigator.clipboard.writeText(result)}
+                  className="text-xs bg-slate-700 px-3 py-1 rounded hover:bg-slate-600 transition"
+                >
+                  Copy lệnh
+                </button>
+              )}
             </div>
             <div className="text-sm font-mono whitespace-pre-wrap leading-relaxed text-slate-200">
               {result}
+              {loading && (
+                <span className="inline-block w-2 h-4 ml-1 bg-cyan-400 animate-pulse align-middle" />
+              )}
             </div>
           </div>
         )}

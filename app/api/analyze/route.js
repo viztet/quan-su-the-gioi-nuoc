@@ -1,5 +1,8 @@
 import { GoogleGenAI } from "@google/genai";
 
+// 1. Chuyển sang Edge Runtime để hỗ trợ Streaming trực tiếp không bị timeout 10s của Vercel
+export const runtime = "edge";
+
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 export async function POST(req) {
@@ -8,27 +11,27 @@ export async function POST(req) {
       await req.json();
 
     const systemInstruction = `
-Bạn là Tổng Tham Mưu Trưởng Tác Chiến Liên Minh trong tựa game "Thế Giới Nước Điên Cuồng" (Mad Survivor: Arid War).
-Nhiệm vụ: Đọc ảnh hồ sơ hai bên (Clan Mình vs Clan Nâu) và ảnh bản đồ/ghi chú sự kiện để xuất KẾ HOẠCH TÁC CHIẾN LIÊN MINH NGẮN GỌN, TRỰC DIỆN.
+Bạn là Quân Sư Tác Chiến game "Thế Giới Nước Điên Cuồng" (Mad Survivor: Arid War).
+Nhiệm vụ: Đọc ảnh hồ sơ 2 bên và bối cảnh sự kiện để xuất KẾ HOẠCH TÁC CHIẾN LIÊN MINH NGẮN GỌN, TRỰC DIỆN.
 
-QUY TẮC:
-1. ĐỌC CHỈ SỐ: Tên, Căn cứ, Lực chiến, Binh chủng sở trường (Tàu Tuần Tra / Cano / Thiết Giáp Hạm), Tướng.
-2. QUY ĐỔI GIỜ: Quy đổi giờ Server (UTC) sang Giờ Việt Nam (UTC+7).
-3. ĐIỀN KỴ TÁI MÃ: Ghép cặp khắc chế rõ ràng, cách xử lý khi Top 1 Nâu đi Rally.
-4. PHÂN CÔNG VAI TRÒ: Rally Lead, Garrison Lead, Fast Capper, Chi viện.
-Yêu cầu: Đi thẳng vào mệnh lệnh tác chiến, súc tích, không dông dài.`;
+QUY TẮC PHÂN TÍCH:
+- Nhận diện nhanh: Tên, Căn cứ, Lực chiến, Binh chủng (Tàu Tuần Tra / Cano / Thiết Giáp Hạm), Tướng.
+- Bám sát Giờ Server (UTC) và quy đổi sang Giờ VN (UTC+7).
+- Phân công rõ: Rally Lead (Chủ công), Garrison Lead (Thủ cứ điểm), Fast Capper (Chiếm cờ tốc độ), Chi viện.
+- Áp dụng Điền Kỵ Tái Mã xếp cặp.
+YÊU CẦU: Xuất ngay dạng gạch đầu dòng mệnh lệnh, không giải thích dài dòng, không chào hỏi.`;
 
     const contents = [];
 
     if (contextImages && contextImages.length > 0) {
-      contents.push("--- [ẢNH BẢN ĐỒ / THỂ THỨC SỰ KIỆN] ---");
+      contents.push("--- [ẢNH BẢN ĐỒ / THỂ THỨC] ---");
       contextImages.forEach((img) =>
         contents.push({ inlineData: { data: img.data, mimeType: img.type } }),
       );
     }
 
     contents.push(
-      `--- [BỐI CẢNH & MỤC TIÊU]: ${battleContextText || "Chiếm cứ điểm và diệt quân"} ---`,
+      `--- [BỐI CẢNH & GIỜ SERVER]: ${battleContextText || "Tranh đoạt cứ điểm"} ---`,
     );
 
     contents.push("--- [HỒ SƠ CLAN MÌNH] ---");
@@ -36,54 +39,36 @@ Yêu cầu: Đi thẳng vào mệnh lệnh tác chiến, súc tích, không dôn
       contents.push({ inlineData: { data: img.data, mimeType: img.type } }),
     );
 
-    contents.push("--- [HỒ SƠ CLAN NÂU (ĐỐI THỦ)] ---");
+    contents.push("--- [HỒ SƠ CLAN NÂU] ---");
     imagesNau.forEach((img) =>
       contents.push({ inlineData: { data: img.data, mimeType: img.type } }),
     );
 
-    contents.push("Xuất kế hoạch tác chiến liên minh chi tiết ngay.");
+    contents.push("Xuất kế hoạch tác chiến ngay:");
 
-    // Danh sách model ưu tiên: Thử model 1, nếu quá tải thì tự nhảy sang model 2
-    const candidateModels = ["gemini-2.5-flash", "gemini-2.0-flash"];
-    let responseStream = null;
-    let lastError = null;
+    // Gọi stream với gemini-3.8-flash, ép nhiệt độ thấp và giới hạn token để tốc độ tối đa
+    const responseStream = await ai.models.generateContentStream({
+      model: "gemini-3.8-flash",
+      contents: contents,
+      config: {
+        systemInstruction: systemInstruction,
+        temperature: 0.1,
+        maxOutputTokens: 2048,
+        thinkingConfig: {
+          thinkingBudget: 0, // Triệt tiêu thời gian suy nghĩ ngầm, nhả chữ lập tức
+        },
+      },
+    });
 
-    for (const modelName of candidateModels) {
-      try {
-        responseStream = await ai.models.generateContentStream({
-          model: modelName,
-          contents: contents,
-          config: {
-            systemInstruction: systemInstruction,
-            temperature: 0.1,
-          },
-        });
-        if (responseStream) break; // Gọi thành công thì thoát vòng lặp
-      } catch (err) {
-        console.warn(
-          `Model ${modelName} bị lỗi/quá tải, đang chuyển sang model dự phòng...`,
-          err.message,
-        );
-        lastError = err;
-      }
-    }
-
-    if (!responseStream) {
-      throw (
-        lastError ||
-        new Error(
-          "Tất cả các cụm máy chủ AI đang quá tải, vui lòng thử lại sau 30 giây.",
-        )
-      );
-    }
-
-    // Trả stream dữ liệu về giao diện
+    // Tạo luồng phản hồi streaming chuẩn Web Stream
     const encoder = new TextEncoder();
     const readable = new ReadableStream({
       async start(controller) {
         try {
           for await (const chunk of responseStream) {
-            controller.enqueue(encoder.encode(chunk.text));
+            if (chunk.text) {
+              controller.enqueue(encoder.encode(chunk.text));
+            }
           }
         } catch (err) {
           controller.error(err);
@@ -96,11 +81,11 @@ Yêu cầu: Đi thẳng vào mệnh lệnh tác chiến, súc tích, không dôn
     return new Response(readable, {
       headers: {
         "Content-Type": "text/plain; charset=utf-8",
-        "Transfer-Encoding": "chunked",
+        "Cache-Control": "no-cache, no-transform",
       },
     });
   } catch (err) {
-    console.error(err);
+    console.error("API Error:", err);
     return new Response(JSON.stringify({ error: err.message }), {
       status: 500,
       headers: { "Content-Type": "application/json" },

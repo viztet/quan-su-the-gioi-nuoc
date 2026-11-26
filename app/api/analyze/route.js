@@ -57,7 +57,7 @@ Lời văn dứt khoát, mang tính mệnh lệnh quân sự.`;
     );
 
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-3.8-flash",
       contents: contents,
       config: {
         systemInstruction: systemInstruction,

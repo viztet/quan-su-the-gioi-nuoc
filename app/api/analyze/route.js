@@ -1,9 +1,13 @@
 import { GoogleGenAI } from "@google/genai";
 
-// 1. Chuyển sang Edge Runtime để hỗ trợ Streaming trực tiếp không bị timeout 10s của Vercel
 export const runtime = "edge";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+// Danh sách các model tương thích hiện tại để tự động chuyển luân phiên khi có lỗi 503
+const MODELS = ["gemini-3.8-flash", "gemini-3.5-flash", "gemini-3.0-flash"];
+
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export async function POST(req) {
   try {
@@ -12,14 +16,14 @@ export async function POST(req) {
 
     const systemInstruction = `
 Bạn là Quân Sư Tác Chiến game "Thế Giới Nước Điên Cuồng" (Mad Survivor: Arid War).
-Nhiệm vụ: Đọc ảnh hồ sơ 2 bên và bối cảnh sự kiện để xuất KẾ HOẠCH TÁC CHIẾN LIÊN MINH NGẮN GỌN, TRỰC DIỆN.
+Nhiệm vụ: Phân tích ảnh hồ sơ 2 bên và bối cảnh để xuất KẾ HOẠCH TÁC CHIẾN LIÊN MINH NGẮN GỌN, TRỰC DIỆN.
 
-QUY TẮC PHÂN TÍCH:
-- Nhận diện nhanh: Tên, Căn cứ, Lực chiến, Binh chủng (Tàu Tuần Tra / Cano / Thiết Giáp Hạm), Tướng.
+QUY TẮC:
+- Đọc thông số: Tên, Lực chiến, Căn cứ, Binh chủng (Tàu Tuần Tra / Cano / Thiết Giáp Hạm), Tướng.
 - Bám sát Giờ Server (UTC) và quy đổi sang Giờ VN (UTC+7).
-- Phân công rõ: Rally Lead (Chủ công), Garrison Lead (Thủ cứ điểm), Fast Capper (Chiếm cờ tốc độ), Chi viện.
+- Phân vai rõ ràng: Rally Lead, Garrison Lead, Fast Capper, Chi viện.
 - Áp dụng Điền Kỵ Tái Mã xếp cặp.
-YÊU CẦU: Xuất ngay dạng gạch đầu dòng mệnh lệnh, không giải thích dài dòng, không chào hỏi.`;
+Yêu cầu: Xuất trực tiếp dạng gạch đầu dòng mệnh lệnh, súc tích, không dông dài.`;
 
     const contents = [];
 
@@ -46,21 +50,46 @@ YÊU CẦU: Xuất ngay dạng gạch đầu dòng mệnh lệnh, không giải 
 
     contents.push("Xuất kế hoạch tác chiến ngay:");
 
-    // Gọi stream với gemini-3.8-flash, ép nhiệt độ thấp và giới hạn token để tốc độ tối đa
-    const responseStream = await ai.models.generateContentStream({
-      model: "gemini-3.8-flash",
-      contents: contents,
-      config: {
-        systemInstruction: systemInstruction,
-        temperature: 0.1,
-        maxOutputTokens: 2048,
-        thinkingConfig: {
-          thinkingBudget: 0, // Triệt tiêu thời gian suy nghĩ ngầm, nhả chữ lập tức
-        },
-      },
-    });
+    let responseStream = null;
+    let lastError = null;
 
-    // Tạo luồng phản hồi streaming chuẩn Web Stream
+    // Vòng lặp tự động chuyển model hoặc thử lại khi dính lỗi 503
+    for (const modelName of MODELS) {
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          responseStream = await ai.models.generateContentStream({
+            model: modelName,
+            contents: contents,
+            config: {
+              systemInstruction: systemInstruction,
+              temperature: 0.1,
+              maxOutputTokens: 2048,
+              thinkingConfig: { thinkingBudget: 0 },
+            },
+          });
+          if (responseStream) break;
+        } catch (err) {
+          lastError = err;
+          // Nếu server báo 503 hoặc 429, tạm dừng 1s rồi thử lại
+          if (err.message?.includes("503") || err.message?.includes("429")) {
+            await delay(1000);
+          } else {
+            break; // Lỗi khác (như 404) thì đổi ngay sang model kế tiếp
+          }
+        }
+      }
+      if (responseStream) break;
+    }
+
+    if (!responseStream) {
+      throw (
+        lastError ||
+        new Error(
+          "Cụm máy chủ AI đang chịu tải cao, vui lòng thử lại sau giây lát.",
+        )
+      );
+    }
+
     const encoder = new TextEncoder();
     const readable = new ReadableStream({
       async start(controller) {

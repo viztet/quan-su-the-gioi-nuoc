@@ -5,6 +5,8 @@ export const dynamic = "force-dynamic";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 export async function POST(req) {
   try {
     const {
@@ -66,31 +68,52 @@ Yêu cầu: Xuất ngay dạng gạch đầu dòng mệnh lệnh, không giải 
 
     contents.push("Xuất kế hoạch tác chiến ngay:");
 
-    // 1. Gọi trực tiếp Gemini trước (nếu lỗi sẽ nhảy ngay vào catch bên dưới, không bao giờ bị treo 60s)
-    let responseStream;
-    try {
-      responseStream = await ai.models.generateContentStream({
-        model: "gemini-3.8-flash",
-        contents: contents,
-        config: {
-          systemInstruction: systemInstruction,
-          temperature: 0.1,
-          maxOutputTokens: 2048,
-        },
-      });
-    } catch (apiErr) {
-      console.error("Gemini Direct Call Error:", apiErr);
-      const is503 = apiErr.message?.includes("503") || apiErr.status === 503;
+    // Tự động thử lại tối đa 3 lần nếu Google AI trả về lỗi 503 / 429
+    let responseStream = null;
+    let lastError = null;
+
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        responseStream = await ai.models.generateContentStream({
+          model: "gemini-3.8-flash",
+          contents: contents,
+          config: {
+            systemInstruction: systemInstruction,
+            temperature: 0.1,
+            maxOutputTokens: 2048,
+          },
+        });
+        if (responseStream) break;
+      } catch (apiErr) {
+        lastError = apiErr;
+        console.error(`Attempt ${attempt} error:`, apiErr.message);
+        const isTransient =
+          apiErr.message?.includes("503") ||
+          apiErr.message?.includes("429") ||
+          apiErr.status === 503 ||
+          apiErr.status === 429;
+
+        if (isTransient && attempt < 3) {
+          await delay(1500 * attempt); // Nghỉ 1.5s lần đầu, 3s lần 2 rồi thử lại
+        } else {
+          break;
+        }
+      }
+    }
+
+    if (!responseStream) {
+      const is503 =
+        lastError?.message?.includes("503") || lastError?.status === 503;
       const errMsg = is503
-        ? "Cụm máy chủ Google AI đang quá tải tức thời (503). Hãy đợi 10 giây rồi bấm lại!"
-        : `Lỗi kết nối Gemini: ${apiErr.message}`;
+        ? "Cụm máy chủ Google AI đang quá tải tức thời (503). Hãy đợi vài giây rồi bấm lại!"
+        : `Lỗi kết nối Gemini: ${lastError?.message}`;
       return new Response(JSON.stringify({ error: errMsg }), {
         status: 500,
         headers: { "Content-Type": "application/json" },
       });
     }
 
-    // 2. Chuyển stream của Gemini sang Web ReadableStream trả về client
+    // Đẩy luồng stream về giao diện
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       async start(controller) {

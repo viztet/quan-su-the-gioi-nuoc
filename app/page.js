@@ -6,12 +6,12 @@ export default function Home() {
   const [imagesMinh, setImagesMinh] = useState([]);
   const [imagesNau, setImagesNau] = useState([]);
   const [contextImages, setContextImages] = useState([]);
-  const [compareImages, setCompareImages] = useState([]); // Mục mới: Ảnh so sánh tương quan lực chiến / BXH
+  const [compareImages, setCompareImages] = useState([]);
   const [battleContextText, setBattleContextText] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState("");
 
-  // Nén ảnh: Tối đa 600px, JPEG 0.5 (~30KB/ảnh)
+  // Nén ảnh tối ưu: 400px, JPEG 0.4 (~15-20KB/ảnh, giảm tối đa vision token tránh nghẽn GPU)
   const compressImage = (file) => {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -21,7 +21,7 @@ export default function Home() {
         img.src = event.target.result;
         img.onload = () => {
           const canvas = document.createElement("canvas");
-          const MAX_WIDTH = 600;
+          const MAX_WIDTH = 400;
           let width = img.width;
           let height = img.height;
 
@@ -35,7 +35,7 @@ export default function Home() {
           const ctx = canvas.getContext("2d");
           ctx.drawImage(img, 0, 0, width, height);
 
-          const dataUrl = canvas.toDataURL("image/jpeg", 0.5);
+          const dataUrl = canvas.toDataURL("image/jpeg", 0.4);
           resolve({
             data: dataUrl.split(",")[1],
             type: "image/jpeg",
@@ -55,7 +55,6 @@ export default function Home() {
   };
 
   const handleAnalyze = async () => {
-    // Cho phép phân tích nếu có ảnh profile 2 bên HOẶC có ảnh so sánh bảng tương quan lực chiến
     if (
       (imagesMinh.length === 0 || imagesNau.length === 0) &&
       compareImages.length === 0
@@ -191,7 +190,7 @@ export default function Home() {
           </div>
         </div>
 
-        {/* MỤC MỚI: 2. Bảng Xếp Hạng & So Sánh Tương Quan Lực Chiến */}
+        {/* 2. Bảng Xếp Hạng & So Sánh Tương Quan Lực Chiến */}
         <div className="bg-slate-800 p-4 rounded-xl border border-indigo-500/30 space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-bold text-indigo-400">
@@ -233,7 +232,6 @@ export default function Home() {
 
         {/* 3 & 4. Nạp ảnh profile chi tiết từng bên */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Clan Mình */}
           <div className="bg-slate-800 p-4 rounded-xl border border-emerald-500/30 space-y-3">
             <h2 className="font-bold text-emerald-400 text-sm">
               3. ẢNH PROFILE CLAN MÌNH
@@ -276,7 +274,6 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Clan Nâu */}
           <div className="bg-slate-800 p-4 rounded-xl border border-amber-500/30 space-y-3">
             <h2 className="font-bold text-amber-500 text-sm">
               4. ẢNH PROFILE CLAN NÂU (ĐỐI THỦ)

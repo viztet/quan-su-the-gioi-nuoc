@@ -22,12 +22,12 @@ Bạn là Quân Sư Tác Chiến game "Thế Giới Nước Điên Cuồng" (Mad
 Nhiệm vụ: Phân tích nhanh chỉ số 2 bên qua ảnh BXH, ảnh profile và bối cảnh để xuất KẾ HOẠCH TÁC CHIẾN LIÊN MINH NGẮN GỌN, TRỰC DIỆN.
 
 QUY TẮC:
-- Nếu có Bảng so sánh / BXH: Ưu tiên bám sát BXH để so sánh tổng quan lực chiến và định vị ngay các Whale, không đọc lan man.
+- Nếu có Bảng so sánh / BXH: Bám sát BXH để so sánh tổng quan lực chiến và định vị ngay các Whale, không đọc lan man.
 - Đọc thông số cơ bản: Tên, Lực chiến, Binh chủng sở trường (Tàu Tuần Tra / Cano / Thiết Giáp Hạm), Tướng.
 - Quy đổi Giờ Server (UTC) sang Giờ VN (UTC+7).
 - Phân công rõ: Rally Lead, Garrison Lead, Fast Capper, Chi viện.
 - Ghép cặp Điền Kỵ Tái Mã.
-- ĐỊNH DẠNG: TUYỆT ĐỐI KHÔNG dùng mã LaTeX (như $\\rightarrow$ hay $\\Rightarrow$). Bắt buộc dùng ký tự Unicode như "➔" hoặc "->".
+- ĐỊNH DẠNG: TUYỆT ĐỐI KHÔNG dùng mã LaTeX. Bắt buộc dùng ký tự Unicode như "➔" hoặc "->".
 Yêu cầu: Xuất ngay dạng gạch đầu dòng mệnh lệnh, không giải thích dài dòng, không chào hỏi.`;
 
     const contents = [];
@@ -68,37 +68,41 @@ Yêu cầu: Xuất ngay dạng gạch đầu dòng mệnh lệnh, không giải 
 
     contents.push("Xuất kế hoạch tác chiến ngay:");
 
-    // Thử gọi stream trực tiếp từ Gemini
+    // Danh sách model thế hệ 3 chuẩn xác: Thử 3.8 -> 3.6 -> 3.5-flash-lite
+    const ACTIVE_MODELS = [
+      "gemini-3.8-flash",
+      "gemini-3.6-flash",
+      "gemini-3.5-flash-lite",
+    ];
+
     let responseStream = null;
     let lastError = null;
 
-    for (let attempt = 1; attempt <= 2; attempt++) {
+    for (const modelName of ACTIVE_MODELS) {
       try {
         responseStream = await ai.models.generateContentStream({
-          model: "gemini-3.8-flash",
+          model: modelName,
           contents: contents,
           config: {
             systemInstruction: systemInstruction,
             temperature: 0.1,
             maxOutputTokens: 2048,
-            thinkingConfig: { thinkingBudget: 0 },
           },
         });
         if (responseStream) break;
       } catch (err) {
         lastError = err;
-        console.error(`Attempt ${attempt} error:`, err.message);
-        if (err.message?.includes("503") || err.message?.includes("429")) {
-          await delay(1500);
-        } else {
-          break;
-        }
+        console.warn(
+          `Model ${modelName} gặp lỗi/tải cao, chuyển tiếp model khác...`,
+          err.message,
+        );
+        await delay(800);
       }
     }
 
     if (!responseStream) {
       const msg = lastError?.message?.includes("503")
-        ? "Cụm máy chủ AI đang chịu tải cao, vui lòng thử lại sau vài giây!"
+        ? "Cụm máy chủ AI đang chịu tải cao đột ngột trên các cụm Flash. Bạn thử lại sau 30 giây nhé!"
         : lastError?.message || "Lỗi kết nối Gemini API";
       return new Response(JSON.stringify({ error: msg }), {
         status: 500,
@@ -116,7 +120,7 @@ Yêu cầu: Xuất ngay dạng gạch đầu dòng mệnh lệnh, không giải 
             }
           }
         } catch (streamErr) {
-          console.error("Stream reading error:", streamErr);
+          console.error("Stream error:", streamErr);
           controller.enqueue(
             encoder.encode(`\n\n⚠️ Lỗi ngắt quãng luồng: ${streamErr.message}`),
           );

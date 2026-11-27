@@ -5,7 +5,15 @@ export const dynamic = "force-dynamic";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+// Hàm tạo đồng hồ đếm ngược để tự ngắt nếu Google AI treo quá lâu
+const withTimeout = (promise, ms) => {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("GEMINI_TIMEOUT")), ms),
+    ),
+  ]);
+};
 
 export async function POST(req) {
   try {
@@ -68,13 +76,11 @@ Yêu cầu: Xuất ngay dạng gạch đầu dòng mệnh lệnh, không giải 
 
     contents.push("Xuất kế hoạch tác chiến ngay:");
 
-    // Tự động thử lại tối đa 3 lần nếu Google AI trả về lỗi 503 / 429
-    let responseStream = null;
-    let lastError = null;
-
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        responseStream = await ai.models.generateContentStream({
+    // Gọi 1 lần duy nhất, giới hạn tối đa 25 giây để không bao giờ chạm trần 60s của Vercel
+    let responseStream;
+    try {
+      responseStream = await withTimeout(
+        ai.models.generateContentStream({
           model: "gemini-3.8-flash",
           contents: contents,
           config: {
@@ -82,38 +88,27 @@ Yêu cầu: Xuất ngay dạng gạch đầu dòng mệnh lệnh, không giải 
             temperature: 0.1,
             maxOutputTokens: 2048,
           },
-        });
-        if (responseStream) break;
-      } catch (apiErr) {
-        lastError = apiErr;
-        console.error(`Attempt ${attempt} error:`, apiErr.message);
-        const isTransient =
-          apiErr.message?.includes("503") ||
-          apiErr.message?.includes("429") ||
-          apiErr.status === 503 ||
-          apiErr.status === 429;
+        }),
+        25000,
+      );
+    } catch (apiErr) {
+      console.error("Gemini Call Error:", apiErr.message);
 
-        if (isTransient && attempt < 3) {
-          await delay(1500 * attempt); // Nghỉ 1.5s lần đầu, 3s lần 2 rồi thử lại
-        } else {
-          break;
-        }
+      let errMsg = `Lỗi kết nối Gemini: ${apiErr.message}`;
+      if (apiErr.message === "GEMINI_TIMEOUT") {
+        errMsg =
+          "Google AI phản hồi quá chậm (trên 25 giây) do đang nghẽn mạng. Hãy bấm thử lại!";
+      } else if (apiErr.message?.includes("503") || apiErr.status === 503) {
+        errMsg =
+          "Cụm máy chủ Google AI đang quá tải tức thời (503). Hãy đợi vài giây rồi bấm lại!";
       }
-    }
 
-    if (!responseStream) {
-      const is503 =
-        lastError?.message?.includes("503") || lastError?.status === 503;
-      const errMsg = is503
-        ? "Cụm máy chủ Google AI đang quá tải tức thời (503). Hãy đợi vài giây rồi bấm lại!"
-        : `Lỗi kết nối Gemini: ${lastError?.message}`;
       return new Response(JSON.stringify({ error: errMsg }), {
         status: 500,
         headers: { "Content-Type": "application/json" },
       });
     }
 
-    // Đẩy luồng stream về giao diện
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       async start(controller) {
@@ -139,7 +134,7 @@ Yêu cầu: Xuất ngay dạng gạch đầu dòng mệnh lệnh, không giải 
     return new Response(stream, {
       headers: {
         "Content-Type": "text/plain; charset=utf-8",
-        "Transfer-Encoding": "chunked",
+        "Cache-Control": "no-cache, no-transform",
       },
     });
   } catch (err) {
